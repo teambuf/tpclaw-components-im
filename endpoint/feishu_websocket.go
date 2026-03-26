@@ -24,8 +24,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	feishu2 "github.com/teambuf/tpclaw-components-im/adapter/feishu"
-	api2 "github.com/teambuf/tpclaw-components-im/api"
 	"image"
 	"image/jpeg"
 	"io"
@@ -38,6 +36,8 @@ import (
 	"sync"
 	"time"
 
+	feishu2 "github.com/teambuf/tpclaw-components-im/adapter/feishu"
+	api2 "github.com/teambuf/tpclaw-components-im/api"
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
@@ -220,6 +220,12 @@ func (e *FeishuWebSocket) Start() error {
 		return nil
 	}
 	e.started = true
+
+	// 创建新的 context（如果之前的已被取消）
+	if e.ctx != nil && e.ctx.Err() != nil {
+		// 之前的 context 已取消，创建新的
+		e.ctx, e.cancel = context.WithCancel(context.Background())
+	}
 	e.mu.Unlock()
 
 	// 创建 SDK WebSocket 客户端
@@ -237,7 +243,7 @@ func (e *FeishuWebSocket) Start() error {
 	go func() {
 		defer e.wg.Done()
 		err := e.wsClient.Start(e.ctx)
-		if err != nil {
+		if err != nil && e.ctx.Err() == nil {
 			e.RuleConfig.Logger.Errorf("Feishu WebSocket error: %v", err)
 			e.triggerEvent(endpointApi.EventDisconnect, err)
 		}
@@ -273,11 +279,17 @@ func (e *FeishuWebSocket) Destroy() {
 	e.started = false
 	e.mu.Unlock()
 
+	// 先关闭 WebSocket 客户端（这会关闭连接并停止自动重连）
+	if e.wsClient != nil {
+		e.wsClient.Close()
+	}
+
+	// 再取消 context，让 SDK 的 Start 方法退出
 	if e.cancel != nil {
 		e.cancel()
 	}
 
-	// 等待 WebSocket 连接关闭，最多等待 3 秒
+	// 等待 WebSocket 连接关闭，最多等待 5 秒
 	done := make(chan struct{})
 	go func() {
 		e.wg.Wait()
@@ -287,16 +299,28 @@ func (e *FeishuWebSocket) Destroy() {
 	select {
 	case <-done:
 		// 正常关闭
-	case <-time.After(3 * time.Second):
-		// 超时，强制退出
+		e.RuleConfig.Logger.Infof("Feishu WebSocket endpoint destroyed, appId: %s", e.Config.AppID)
+	case <-time.After(5 * time.Second):
+		// 超时，记录警告
 		e.RuleConfig.Logger.Warnf("Feishu WebSocket destroy timeout, appId: %s", e.Config.AppID)
+		// 即使超时也继续，context 已取消，SDK 应该最终会退出
 	}
-	e.RuleConfig.Logger.Infof("Feishu WebSocket endpoint destroyed, appId: %s", e.Config.AppID)
+
+	// 清空客户端引用
+	e.wsClient = nil
 }
 
 // handleMessageReceive 处理接收到的消息事件
 func (e *FeishuWebSocket) handleMessageReceive(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
 	if event.Event == nil || event.Event.Message == nil {
+		return nil
+	}
+
+	// 如果 endpoint 已销毁（ctx 被取消），则不处理消息
+	if e.ctx != nil && e.ctx.Err() != nil {
+		if e.RuleConfig.Logger != nil {
+			e.RuleConfig.Logger.Warnf("[Feishu] endpoint is destroyed, ignore message: %s", larkcore.StringValue(event.Event.Message.MessageId))
+		}
 		return nil
 	}
 
@@ -444,6 +468,14 @@ func (e *FeishuWebSocket) handleMessageRead(ctx context.Context, event *larkim.P
 
 // processMessage 处理消息并路由
 func (e *FeishuWebSocket) processMessage(msg *api2.IMMessage) {
+	// 如果 endpoint 已销毁（ctx 被取消），则不处理消息
+	if e.ctx != nil && e.ctx.Err() != nil {
+		if e.RuleConfig.Logger != nil {
+			e.RuleConfig.Logger.Warnf("[Feishu] endpoint is destroyed, ignore message: %s", msg.ID)
+		}
+		return
+	}
+
 	// 构建消息数据
 	// 如果包含图片，构建多模态消息格式
 	messageData := e.buildMessageData(msg)

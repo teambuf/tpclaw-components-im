@@ -3,10 +3,12 @@ module github.com/teambuf/tpclaw-components-im
 go 1.24.0
 
 require (
-	github.com/larksuite/oapi-sdk-go/v3 v3.5.3
+	github.com/larksuite/oapi-sdk-go/v3 v3.5.3-beta.1
 	github.com/rulego/rulego v0.35.3
 	golang.org/x/image v0.23.0
 )
+
+require github.com/gorilla/websocket v1.5.0 // indirect
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
@@ -19,7 +21,6 @@ require (
 	github.com/gofrs/uuid/v5 v5.0.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/pprof v0.0.0-20230207041349-798e818bf904 // indirect
-	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
@@ -34,3 +35,5 @@ require (
 replace github.com/rulego/rulego => ../rulego
 
 // replace github.com/larksuite/oapi-sdk-go/v3 => ../oapi-sdk-go
+
+replace github.com/larksuite/oapi-sdk-go/v3 => ../oapi-sdk-go

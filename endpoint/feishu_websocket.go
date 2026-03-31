@@ -36,8 +36,6 @@ import (
 	"sync"
 	"time"
 
-	feishu2 "github.com/teambuf/tpclaw-components-im/adapter/feishu"
-	api2 "github.com/teambuf/tpclaw-components-im/api"
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
@@ -48,6 +46,8 @@ import (
 	"github.com/rulego/rulego/endpoint"
 	"github.com/rulego/rulego/endpoint/impl"
 	"github.com/rulego/rulego/utils/maps"
+	feishu2 "github.com/teambuf/tpclaw-components-im/adapter/feishu"
+	api2 "github.com/teambuf/tpclaw-components-im/api"
 	"golang.org/x/image/draw"
 )
 
@@ -63,6 +63,8 @@ func init() {
 
 // FeishuWebSocketConfig 飞书 WebSocket 端点配置
 type FeishuWebSocketConfig struct {
+	// AccountID 账号 ID（用于多账号区分）
+	AccountID string `json:"accountId"`
 	// AppID 飞书应用 ID
 	AppID string `json:"appId"`
 	// AppSecret 飞书应用密钥
@@ -497,8 +499,13 @@ func (e *FeishuWebSocket) processMessage(msg *api2.IMMessage) {
 	// IM 通道需要加载历史消息以保持上下文
 	ruleMsg.Metadata.PutValue(api2.MetaLoadHistory, "true")
 
-	// 设置机器人 ID
+	// 设置机器人 ID 和 Account ID
 	ruleMsg.Metadata.PutValue(api2.MetaBotID, e.Config.AppID)
+	if e.Config.AccountID != "" {
+		ruleMsg.Metadata.PutValue(api2.MetaAccountID, e.Config.AccountID)
+	} else {
+		ruleMsg.Metadata.PutValue(api2.MetaAccountID, e.Config.AppID)
+	}
 
 	// 获取 tenantKey（优先从消息元数据获取，其次从配置获取）
 	tenantKey := ""

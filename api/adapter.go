@@ -144,7 +144,7 @@ const (
 	ProcessorWeComAck         = "im/wecom/ack"
 
 	// Send processors
-	ProcessorFeishuSend = "im/feishu/send"
+	ProcessorSend = "im/send"
 )
 
 // Additional metadata keys for internal use (platform-specific extensions)

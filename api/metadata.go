@@ -28,6 +28,7 @@ const (
 	MetaEventType = "im.eventType"
 	MetaChatType  = "im.chatType"
 	MetaTimestamp = "im.timestamp"
+	MetaAccountID = "accountId" // 账号 ID (与切面兼容)
 
 	// ============== Extended Common Metadata Keys ==============
 	MetaIsGroup       = "im.isGroup"       // 是否群聊 (true/false)
@@ -53,8 +54,9 @@ const (
 	MetaHasMedia   = "im.hasMedia"   // 是否包含媒体文件 (bool)
 
 	// ============== Response Metadata Keys ==============
-	MetaResponseChatID = "im.responseChatId"
-	MetaReplyMsgID     = "im.replyMsgId"
+	MetaResponseChatID     = "im.responseChatId"
+	MetaReplyMsgID         = "im.replyMsgId"
+	MetaResponseWeComReqID = "im.responseWecomReqId"
 
 	// ============== Feishu Specific Keys ==============
 	MetaFeishuAppID      = "im.appId"
@@ -85,6 +87,13 @@ const (
 	MetaWeComEventKey       = "im.eventKey"
 	MetaWeComChangeType     = "im.changeType"
 	MetaWeComStreamChatInfo = "im.streamChatInfo"
+
+	// ============== WeCom Bot WebSocket (智能机器人长连接) Keys ==============
+	MetaWeComBotID    = "im.wecomBotId"    // 智能机器人 BotID
+	MetaWeComReqID    = "im.wecomReqId"    // 长连接请求 ID（用于关联回调与回复）
+	MetaWeComChatID   = "im.wecomChatId"   // 会话 ID（群聊时返回）
+	MetaWeComChatType = "im.wecomChatType" // 会话类型 single/group
+	MetaWeComStreamID = "im.wecomStreamId" // 流式消息 ID
 )
 
 // Platform constants.
@@ -103,6 +112,8 @@ const (
 	ChannelFeishu = "feishu"
 	// ChannelFeishuWebhook 飞书 Webhook 推送模式
 	ChannelFeishuWebhook = "feishu_webhook"
+	// ChannelWeCom 企业微信长连接模式（智能机器人）
+	ChannelWeCom = "wecom"
 )
 
 // Message type constants.

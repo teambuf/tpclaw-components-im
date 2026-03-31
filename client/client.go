@@ -21,6 +21,7 @@ package client
 import (
 	"context"
 	"fmt"
+
 	imapi "github.com/teambuf/tpclaw-components-im/api"
 )
 
@@ -76,7 +77,9 @@ type Config struct {
 	AppID string
 	// AppSecret 应用密钥
 	AppSecret string
-	// Extra 额外配置
+	// BotID 机器人 ID（针对企业微信等平台）
+	BotID string
+	// Extra 额外配置（可选）
 	Extra map[string]interface{}
 }
 
@@ -94,6 +97,11 @@ func NewClient(config *Config) (IMClient, error) {
 			AppSecret: config.AppSecret,
 		}), nil
 	case imapi.PlatformWeCom:
+		// 如果有 BotID，则说明是智能机器人模式
+		if config.BotID != "" {
+			return NewWeComBotClient(config.BotID), nil
+		}
+		// 否则回退为企业自建应用模式
 		return NewWeComClient(&WeComConfig{
 			CorpID: config.AppID,
 			Secret: config.AppSecret,

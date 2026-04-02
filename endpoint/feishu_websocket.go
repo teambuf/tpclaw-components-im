@@ -388,11 +388,11 @@ func (e *FeishuWebSocket) handleMessageReceive(ctx context.Context, event *larki
 		}
 	}
 
-	// 发送"思考中"回复（使用消息 ID 进行回复）
-	e.sendThinkingReply(msg.ID, msg.Extensions[api2.MetaFeishuTenantKey])
+	// 发送"思考中"回复（使用消息 ID 进行回复），保存消息 ID 用于后续 Patch 更新
+	thinkingMsgId := e.sendThinkingReply(msg.ID, msg.Extensions[api2.MetaFeishuTenantKey])
 
 	// 处理消息
-	e.processMessage(msg)
+	e.processMessage(msg, thinkingMsgId)
 
 	return nil
 }
@@ -409,7 +409,7 @@ func (e *FeishuWebSocket) handleChatMemberUserAdded(ctx context.Context, event *
 		msg.ChatID = larkcore.StringValue(event.Event.ChatId)
 	}
 
-	e.processMessage(msg)
+	e.processMessage(msg, "")
 	return nil
 }
 
@@ -425,7 +425,7 @@ func (e *FeishuWebSocket) handleChatMemberUserDeleted(ctx context.Context, event
 		msg.ChatID = larkcore.StringValue(event.Event.ChatId)
 	}
 
-	e.processMessage(msg)
+	e.processMessage(msg, "")
 	return nil
 }
 
@@ -441,7 +441,7 @@ func (e *FeishuWebSocket) handleChatMemberBotAdded(ctx context.Context, event *l
 		msg.ChatID = larkcore.StringValue(event.Event.ChatId)
 	}
 
-	e.processMessage(msg)
+	e.processMessage(msg, "")
 	return nil
 }
 
@@ -457,7 +457,7 @@ func (e *FeishuWebSocket) handleChatMemberBotDeleted(ctx context.Context, event 
 		msg.ChatID = larkcore.StringValue(event.Event.ChatId)
 	}
 
-	e.processMessage(msg)
+	e.processMessage(msg, "")
 	return nil
 }
 
@@ -469,7 +469,8 @@ func (e *FeishuWebSocket) handleMessageRead(ctx context.Context, event *larkim.P
 }
 
 // processMessage 处理消息并路由
-func (e *FeishuWebSocket) processMessage(msg *api2.IMMessage) {
+// thinkingMsgId: "思考中"卡片的消息 ID，用于最终 Patch 更新内容（为空则发新消息）
+func (e *FeishuWebSocket) processMessage(msg *api2.IMMessage, thinkingMsgId string) {
 	// 如果 endpoint 已销毁（ctx 被取消），则不处理消息
 	if e.ctx != nil && e.ctx.Err() != nil {
 		if e.RuleConfig.Logger != nil {
@@ -519,6 +520,11 @@ func (e *FeishuWebSocket) processMessage(msg *api2.IMMessage) {
 	// 获取消息 ID 用于错误回复
 	messageId := msg.ID
 	chatId := msg.ChatID
+
+	// 将"思考中"卡片的消息 ID 传入 metadata，用于最终 Patch 更新
+	if thinkingMsgId != "" {
+		ruleMsg.Metadata.PutValue("im.thinkingMsgId", thinkingMsgId)
+	}
 
 	// 创建 Exchange
 	exchange := &endpoint.Exchange{
@@ -1409,7 +1415,8 @@ func (e *FeishuWebSocket) compressImage(data []byte, originalFormat string) ([]b
 }
 
 // sendThinkingReply 发送"思考中"回复（回复指定消息，使用卡片 JSON 2.0）
-func (e *FeishuWebSocket) sendThinkingReply(messageId string, tenantKey interface{}) {
+// 返回创建的消息 ID，用于后续 Patch 更新内容
+func (e *FeishuWebSocket) sendThinkingReply(messageId string, tenantKey interface{}) string {
 	// 使用卡片 JSON 2.0 构建消息
 	cardContent := feishu2.NewCardV2().
 		AddMarkdown(e.Config.ThinkingText).
@@ -1434,11 +1441,18 @@ func (e *FeishuWebSocket) sendThinkingReply(messageId string, tenantKey interfac
 	resp, err := e.larkClient.Im.V1.Message.Reply(context.Background(), req, opts...)
 	if err != nil {
 		e.RuleConfig.Logger.Warnf("[Feishu] send thinking reply error: %v", err)
-		return
+		return ""
 	}
 	if !resp.Success() {
 		e.RuleConfig.Logger.Warnf("[Feishu] send thinking reply failed: code=%d, msg=%s", resp.Code, resp.Msg)
+		return ""
 	}
+
+	// 返回创建的消息 ID
+	if resp.Data != nil && resp.Data.MessageId != nil {
+		return *resp.Data.MessageId
+	}
+	return ""
 }
 
 // triggerEvent 触发事件
@@ -1673,7 +1687,22 @@ func (m *FeishuResponseMessage) SetBody(body []byte) {
 		return
 	}
 
-	// 获取 chatId
+	// 优先 Patch 更新"思考中"卡片
+	if m.requestMsg != nil {
+		thinkingMsgId := m.requestMsg.Metadata.GetValue("im.thinkingMsgId")
+		if thinkingMsgId != "" {
+			patchErr := m.patchCardMessage(thinkingMsgId, string(body))
+			if patchErr == nil {
+				return // Patch 成功，不需要发新消息
+			}
+			// Patch 失败则 fallback 到发新消息
+			if m.logger != nil {
+				m.logger.Warnf("[Feishu] patch thinking card failed, fallback to send new message: %v", patchErr)
+			}
+		}
+	}
+
+	// fallback: 获取 chatId 并发送新消息
 	var chatId string
 	if m.requestMsg != nil {
 		chatId = m.requestMsg.Metadata.GetValue(api2.MetaResponseChatID)
@@ -1691,6 +1720,38 @@ func (m *FeishuResponseMessage) SetBody(body []byte) {
 		// 记录错误，但不影响流程
 		m.err = err
 	}
+}
+
+// patchCardMessage 通过 Patch API 更新已有卡片消息的内容（原地替换"思考中..."为最终回复）
+func (m *FeishuResponseMessage) patchCardMessage(messageId, message string) error {
+	cardContent := feishu2.NewCardV2().
+		AddMarkdown(message).
+		MustString()
+
+	req := larkim.NewPatchMessageReqBuilder().
+		MessageId(messageId).
+		Body(larkim.NewPatchMessageReqBodyBuilder().
+			Content(cardContent).
+			Build()).
+		Build()
+
+	var opts []larkcore.RequestOptionFunc
+	if m.tenantKey != "" {
+		opts = append(opts, larkcore.WithTenantKey(m.tenantKey))
+	}
+
+	resp, err := m.larkClient.Im.Message.Patch(context.Background(), req, opts...)
+	if err != nil {
+		return fmt.Errorf("patch message error: %w", err)
+	}
+	if !resp.Success() {
+		return fmt.Errorf("patch message failed: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	if m.logger != nil {
+		m.logger.Debugf("[Feishu] patchCardMessage success: messageId=%s", messageId)
+	}
+	return nil
 }
 
 // sendMessage 发送新消息（支持 markdown 格式，使用卡片 JSON 2.0）

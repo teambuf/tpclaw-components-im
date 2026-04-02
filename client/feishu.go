@@ -66,6 +66,21 @@ func (c *FeishuClient) Platform() string {
 	return imapi.PlatformFeishu
 }
 
+// detectReceiveIdType 根据 ID 前缀自动判断 receive_id_type
+func detectReceiveIdType(id string) string {
+	switch {
+	case strings.HasPrefix(id, "ou_"):
+		return larkim.ReceiveIdTypeOpenId
+	case strings.HasPrefix(id, "on_"):
+		return larkim.ReceiveIdTypeUnionId
+	case strings.HasPrefix(id, "oc_"):
+		return larkim.ReceiveIdTypeChatId
+	default:
+		// 默认使用 chat_id
+		return larkim.ReceiveIdTypeChatId
+	}
+}
+
 // SetTenantKey 设置租户 key（多租户场景）
 func (c *FeishuClient) SetTenantKey(tenantKey string) {
 	c.tenantKey = tenantKey
@@ -85,7 +100,7 @@ func (c *FeishuClient) SendMessage(ctx context.Context, target, message string) 
 
 	// 构建请求
 	req := larkim.NewCreateMessageReqBuilder().
-		ReceiveIdType(larkim.ReceiveIdTypeChatId).
+		ReceiveIdType(detectReceiveIdType(target)).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
 			MsgType(larkim.MsgTypeText).
 			ReceiveId(target).
@@ -216,7 +231,7 @@ func (c *FeishuClient) SendInteractiveMessage(ctx context.Context, target string
 	}
 
 	req := larkim.NewCreateMessageReqBuilder().
-		ReceiveIdType(larkim.ReceiveIdTypeChatId).
+		ReceiveIdType(detectReceiveIdType(target)).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
 			MsgType(larkim.MsgTypeInteractive).
 			ReceiveId(target).

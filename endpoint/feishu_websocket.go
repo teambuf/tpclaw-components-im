@@ -398,66 +398,31 @@ func (e *FeishuWebSocket) handleMessageReceive(ctx context.Context, event *larki
 }
 
 // handleChatMemberUserAdded 处理用户进群事件
+// 注意：群成员变化事件只做 ACK，不传递到下游 Agent 处理
+// 原因：事件消息内容为空，传递到下游会浪费 API 调用和污染会话历史
 func (e *FeishuWebSocket) handleChatMemberUserAdded(ctx context.Context, event *larkim.P2ChatMemberUserAddedV1) error {
-	msg := &api2.IMMessage{
-		Platform:  api2.PlatformFeishu,
-		EventType: "im.chat.member.user.added_v1",
-		MsgType:   "event",
-	}
-
-	if event.Event != nil {
-		msg.ChatID = larkcore.StringValue(event.Event.ChatId)
-	}
-
-	e.processMessage(msg, "")
+	// 直接 ACK，不传递到下游
 	return nil
 }
 
 // handleChatMemberUserDeleted 处理用户出群事件
+// 注意：群成员变化事件只做 ACK，不传递到下游 Agent 处理
 func (e *FeishuWebSocket) handleChatMemberUserDeleted(ctx context.Context, event *larkim.P2ChatMemberUserDeletedV1) error {
-	msg := &api2.IMMessage{
-		Platform:  api2.PlatformFeishu,
-		EventType: "im.chat.member.user.deleted_v1",
-		MsgType:   "event",
-	}
-
-	if event.Event != nil {
-		msg.ChatID = larkcore.StringValue(event.Event.ChatId)
-	}
-
-	e.processMessage(msg, "")
+	// 直接 ACK，不传递到下游
 	return nil
 }
 
 // handleChatMemberBotAdded 处理机器人进群事件
+// 注意：群成员变化事件只做 ACK，不传递到下游 Agent 处理
 func (e *FeishuWebSocket) handleChatMemberBotAdded(ctx context.Context, event *larkim.P2ChatMemberBotAddedV1) error {
-	msg := &api2.IMMessage{
-		Platform:  api2.PlatformFeishu,
-		EventType: "im.chat.member.bot.added_v1",
-		MsgType:   "event",
-	}
-
-	if event.Event != nil {
-		msg.ChatID = larkcore.StringValue(event.Event.ChatId)
-	}
-
-	e.processMessage(msg, "")
+	// 直接 ACK，不传递到下游
 	return nil
 }
 
 // handleChatMemberBotDeleted 处理机器人被移出群事件
+// 注意：群成员变化事件只做 ACK，不传递到下游 Agent 处理
 func (e *FeishuWebSocket) handleChatMemberBotDeleted(ctx context.Context, event *larkim.P2ChatMemberBotDeletedV1) error {
-	msg := &api2.IMMessage{
-		Platform:  api2.PlatformFeishu,
-		EventType: "im.chat.member.bot.deleted_v1",
-		MsgType:   "event",
-	}
-
-	if event.Event != nil {
-		msg.ChatID = larkcore.StringValue(event.Event.ChatId)
-	}
-
-	e.processMessage(msg, "")
+	// 直接 ACK，不传递到下游
 	return nil
 }
 

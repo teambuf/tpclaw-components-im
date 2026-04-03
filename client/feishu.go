@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	imapi "github.com/teambuf/tpclaw-components-im/api"
+	feishu2 "github.com/teambuf/tpclaw-components-im/adapter/feishu"
 	"io"
 	"strings"
 
@@ -91,20 +92,20 @@ func (c *FeishuClient) GetLarkClient() *lark.Client {
 	return c.client
 }
 
-// SendMessage 发送消息
+// SendMessage 发送消息（使用卡片 Markdown 格式）
 func (c *FeishuClient) SendMessage(ctx context.Context, target, message string) error {
-	// 使用 SDK 的消息构建器
-	content := larkim.NewTextMsgBuilder().
-		Text(message).
-		Build()
+	// 使用卡片 JSON 2.0 构建消息，支持 Markdown 渲染
+	cardContent := feishu2.NewCardV2().
+		AddMarkdown(message).
+		MustString()
 
 	// 构建请求
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType(detectReceiveIdType(target)).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
-			MsgType(larkim.MsgTypeText).
+			MsgType(larkim.MsgTypeInteractive).
 			ReceiveId(target).
-			Content(content).
+			Content(cardContent).
 			Build()).
 		Build()
 
@@ -122,19 +123,19 @@ func (c *FeishuClient) SendMessage(ctx context.Context, target, message string) 
 	return nil
 }
 
-// ReplyMessage 回复消息
+// ReplyMessage 回复消息（使用卡片 Markdown 格式）
 func (c *FeishuClient) ReplyMessage(ctx context.Context, msgID, message string) error {
-	// 使用 SDK 的消息构建器
-	content := larkim.NewTextMsgBuilder().
-		Text(message).
-		Build()
+	// 使用卡片 JSON 2.0 构建消息，支持 Markdown 渲染
+	cardContent := feishu2.NewCardV2().
+		AddMarkdown(message).
+		MustString()
 
 	// 构建请求
 	req := larkim.NewReplyMessageReqBuilder().
 		MessageId(msgID).
 		Body(larkim.NewReplyMessageReqBodyBuilder().
-			MsgType(larkim.MsgTypeText).
-			Content(content).
+			MsgType(larkim.MsgTypeInteractive).
+			Content(cardContent).
 			Build()).
 		Build()
 
@@ -182,12 +183,12 @@ func (c *FeishuClient) UpdateCard(ctx context.Context, cardID string, data map[s
 	return nil
 }
 
-// SendMessageWithReceiveIdType 发送消息（指定接收者 ID 类型）
+// SendMessageWithReceiveIdType 发送消息（指定接收者 ID 类型，使用卡片 Markdown 格式）
 // receiveIdType: chat_id, open_id, user_id, union_id
 func (c *FeishuClient) SendMessageWithReceiveIdType(ctx context.Context, receiveIdType, target, message string) error {
-	content := larkim.NewTextMsgBuilder().
-		Text(message).
-		Build()
+	cardContent := feishu2.NewCardV2().
+		AddMarkdown(message).
+		MustString()
 
 	var idType string
 	switch receiveIdType {
@@ -204,9 +205,9 @@ func (c *FeishuClient) SendMessageWithReceiveIdType(ctx context.Context, receive
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType(idType).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
-			MsgType(larkim.MsgTypeText).
+			MsgType(larkim.MsgTypeInteractive).
 			ReceiveId(target).
-			Content(content).
+			Content(cardContent).
 			Build()).
 		Build()
 

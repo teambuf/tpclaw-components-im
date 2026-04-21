@@ -1075,15 +1075,9 @@ func (e *FeishuWebSocket) downloadFile(ctx context.Context, mediaType, fileKey s
 	}
 }
 
-// downloadImage 下载图片
-// 注意：富文本中的图片 key 格式为 img_v3_xxx，需要使用 File API 而不是 Image API
+// downloadImage 下载图片（用于 msgType=image 的普通图片消息）
+// 使用 Image API 下载，应用只需是消息接收方即可获取
 func (e *FeishuWebSocket) downloadImage(ctx context.Context, imageKey string) ([]byte, string, error) {
-	// 富文本图片 key 以 "img_v3_" 开头，需要使用 File API
-	if strings.HasPrefix(imageKey, "img_v3_") {
-		e.RuleConfig.Logger.Debugf("[Feishu][DEBUG] 检测到富文本图片 key，使用 File API: %s", imageKey)
-		return e.downloadFileResource(ctx, imageKey)
-	}
-
 	req := larkim.NewGetImageReqBuilder().
 		ImageKey(imageKey).
 		Build()
@@ -1285,74 +1279,64 @@ func mimeToExt(mimeType string) string {
 	}
 }
 
-// getImageAsBase64 下载飞书图片并返回 base64 格式
-// 注意：富文本中的图片 key 格式为 img_v3_xxx，需要使用 File API 而不是 Image API
+// getImageAsBase64 下载飞书图片并返回 base64 格式（用于 msgType=image 的普通图片消息）
 func (e *FeishuWebSocket) getImageAsBase64(ctx context.Context, imageKey string) (string, error) {
 	var imageData []byte
 	var mimeType string
 	var err error
 
-	// 富文本图片 key 以 "img_v3_" 开头，需要使用 File API
-	if strings.HasPrefix(imageKey, "img_v3_") {
-		e.RuleConfig.Logger.Debugf("[Feishu][DEBUG] getImageAsBase64: 检测到富文本图片 key，使用 File API: %s", imageKey)
-		imageData, mimeType, err = e.downloadFileResource(ctx, imageKey)
-		if err != nil {
-			return "", fmt.Errorf("failed to download rich text image: %w", err)
-		}
-	} else {
-		req := larkim.NewGetImageReqBuilder().
-			ImageKey(imageKey).
-			Build()
+	req := larkim.NewGetImageReqBuilder().
+		ImageKey(imageKey).
+		Build()
 
-		resp, respErr := e.larkClient.Im.Image.Get(ctx, req)
-		if respErr != nil {
-			return "", fmt.Errorf("failed to get image: %w", respErr)
-		}
-
-		if !resp.Success() {
-			return "", fmt.Errorf("feishu API error (code %d): %s", resp.Code, resp.Msg)
-		}
-
-		// 读取图片数据
-		if resp.File == nil {
-			return "", fmt.Errorf("image data is empty")
-		}
-
-		imageData, err = io.ReadAll(resp.File)
-		if err != nil {
-			return "", fmt.Errorf("failed to read image data: %w", err)
-		}
-
-		// 根据文件名推断原始格式
-		originalFormat := "png"
-		if resp.FileName != "" {
-			switch {
-			case strings.HasSuffix(strings.ToLower(resp.FileName), ".jpg"),
-				strings.HasSuffix(strings.ToLower(resp.FileName), ".jpeg"):
-				originalFormat = "jpeg"
-			case strings.HasSuffix(strings.ToLower(resp.FileName), ".gif"):
-				originalFormat = "gif"
-			case strings.HasSuffix(strings.ToLower(resp.FileName), ".webp"):
-				originalFormat = "webp"
-			case strings.HasSuffix(strings.ToLower(resp.FileName), ".bmp"):
-				originalFormat = "bmp"
-			}
-		}
-
-		// 压缩图片
-		var compressedData []byte
-		compressedData, mimeType, err = e.compressImage(imageData, originalFormat)
-		if err != nil {
-			// 压缩失败，使用原始数据
-			e.RuleConfig.Logger.Warnf("[Feishu] image compression failed, using original: %v", err)
-			mimeType = "image/" + originalFormat
-			if originalFormat == "jpeg" {
-				mimeType = "image/jpeg"
-			}
-			compressedData = imageData
-		}
-		imageData = compressedData
+	resp, respErr := e.larkClient.Im.Image.Get(ctx, req)
+	if respErr != nil {
+		return "", fmt.Errorf("failed to get image: %w", respErr)
 	}
+
+	if !resp.Success() {
+		return "", fmt.Errorf("feishu API error (code %d): %s", resp.Code, resp.Msg)
+	}
+
+	// 读取图片数据
+	if resp.File == nil {
+		return "", fmt.Errorf("image data is empty")
+	}
+
+	imageData, err = io.ReadAll(resp.File)
+	if err != nil {
+		return "", fmt.Errorf("failed to read image data: %w", err)
+	}
+
+	// 根据文件名推断原始格式
+	originalFormat := "png"
+	if resp.FileName != "" {
+		switch {
+		case strings.HasSuffix(strings.ToLower(resp.FileName), ".jpg"),
+			strings.HasSuffix(strings.ToLower(resp.FileName), ".jpeg"):
+			originalFormat = "jpeg"
+		case strings.HasSuffix(strings.ToLower(resp.FileName), ".gif"):
+			originalFormat = "gif"
+		case strings.HasSuffix(strings.ToLower(resp.FileName), ".webp"):
+			originalFormat = "webp"
+		case strings.HasSuffix(strings.ToLower(resp.FileName), ".bmp"):
+			originalFormat = "bmp"
+		}
+	}
+
+	// 压缩图片
+	var compressedData []byte
+	compressedData, mimeType, err = e.compressImage(imageData, originalFormat)
+	if err != nil {
+		// 压缩失败，使用原始数据
+		e.RuleConfig.Logger.Warnf("[Feishu] image compression failed, using original: %v", err)
+		mimeType = "image/" + originalFormat
+		if originalFormat == "jpeg" {
+			mimeType = "image/jpeg"
+		}
+		compressedData = imageData
+	}
+	imageData = compressedData
 
 	// 转换为 base64
 	base64Data := base64.StdEncoding.EncodeToString(imageData)
